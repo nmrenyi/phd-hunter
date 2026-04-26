@@ -49,12 +49,13 @@ def fetch_playwright(url: str, wait_ms: int = 2500) -> str | None:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            page = browser.new_page(extra_http_headers={"Accept-Language": "en-US,en;q=0.9"})
-            page.goto(url, wait_until="networkidle", timeout=30_000)
-            page.wait_for_timeout(wait_ms)
-            html = page.content()
-            browser.close()
-            return html
+            try:
+                page = browser.new_page(extra_http_headers={"Accept-Language": "en-US,en;q=0.9"})
+                page.goto(url, wait_until="networkidle", timeout=30_000)
+                page.wait_for_timeout(wait_ms)
+                return page.content()
+            finally:
+                browser.close()
     except Exception as e:
         logger.debug(f"playwright fetch failed for {url}: {e}")
         return None
@@ -91,6 +92,7 @@ def clean(html: str, base_url: str = "") -> tuple[str, list[str]]:
 
 
 def same_domain(url: str, base: str) -> bool:
-    b = urlparse(base).netloc.lstrip("www.")
-    u = urlparse(url).netloc.lstrip("www.")
-    return u == b or u.endswith("." + b)
+    # removeprefix, not lstrip — lstrip strips individual chars, not the whole prefix
+    b = urlparse(base).netloc.removeprefix("www.")
+    u = urlparse(url).netloc.removeprefix("www.")
+    return bool(b) and (u == b or u.endswith("." + b))

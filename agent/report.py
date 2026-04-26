@@ -70,7 +70,7 @@ def generate() -> str:
                     ("Focus areas", "focus_areas"),
                 ]:
                     val = prog.get(key, "")
-                    if val and val.lower() not in ("unknown", ""):
+                    if val and val.lower() != "unknown":
                         lines.append(f"**{label}:** {val}  ")
                 app_url = prog.get("application_url", "")
                 if app_url:

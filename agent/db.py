@@ -56,17 +56,24 @@ def init_db():
 
 def upsert_university(name, website=None, sources=None,
                       rank_qs=None, rank_times=None, rank_arwu=None):
+    new_sources = set(sources or [])
     with _conn() as c:
+        row = c.execute("SELECT sources FROM universities WHERE name=?", (name,)).fetchone()
+        if row:
+            existing = set(json.loads(row["sources"] or "[]"))
+            merged = json.dumps(sorted(existing | new_sources))
+        else:
+            merged = json.dumps(sorted(new_sources))
         c.execute("""
         INSERT INTO universities (name, website, sources, rank_qs, rank_times, rank_arwu)
         VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(name) DO UPDATE SET
             website    = COALESCE(excluded.website, website),
-            sources    = excluded.sources,
+            sources    = ?,
             rank_qs    = COALESCE(excluded.rank_qs, rank_qs),
             rank_times = COALESCE(excluded.rank_times, rank_times),
             rank_arwu  = COALESCE(excluded.rank_arwu, rank_arwu)
-        """, (name, website, json.dumps(sources or []), rank_qs, rank_times, rank_arwu))
+        """, (name, website, merged, rank_qs, rank_times, rank_arwu, merged))
 
 
 def get_all_universities() -> list:

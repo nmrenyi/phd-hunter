@@ -39,67 +39,72 @@ def _process_professor(uni_id: int, uni_name: str, url: str):
     if professor_is_done(url):
         return
     touch_professor(uni_id, url)
+    try:
+        html = fetch(url)
+        if not html:
+            return
+        text, _ = clean(html, url)
 
-    html = fetch(url)
-    if not html:
-        return
-    text, _ = clean(html, url)
+        prof = call(PROF_EXTRACT_SYS, PROF_EXTRACT_USER.format(url=url, text=text))
+        # Guard: LLM must return a dict, not a list or None
+        if not isinstance(prof, dict) or prof.get("skip") or not prof.get("name"):
+            return
 
-    prof = call(PROF_EXTRACT_SYS, PROF_EXTRACT_USER.format(url=url, text=text))
-    if not prof or prof.get("skip") or not prof.get("name"):
-        return
+        match = call(
+            MATCH_SYS,
+            MATCH_USER.format(
+                name=prof.get("name", ""),
+                title=prof.get("title", ""),
+                department=prof.get("department", ""),
+                university=uni_name,
+                research_summary=prof.get("research_summary", ""),
+            ),
+        )
 
-    match = call(
-        MATCH_SYS,
-        MATCH_USER.format(
+        score = 0
+        reason = ""
+        if isinstance(match, dict) and isinstance(match.get("score"), int):
+            score = max(1, min(5, match["score"]))  # clamp to valid range
+            reason = match.get("reason", "")
+
+        save_professor(
+            page_url=url,
             name=prof.get("name", ""),
             title=prof.get("title", ""),
             department=prof.get("department", ""),
-            university=uni_name,
             research_summary=prof.get("research_summary", ""),
-        ),
-    )
-
-    score = 0
-    reason = ""
-    if match and isinstance(match.get("score"), int):
-        score = match["score"]
-        reason = match.get("reason", "")
-
-    save_professor(
-        page_url=url,
-        name=prof.get("name", ""),
-        title=prof.get("title", ""),
-        department=prof.get("department", ""),
-        research_summary=prof.get("research_summary", ""),
-        match_score=score,
-        match_reason=reason,
-        contact=prof.get("contact", ""),
-    )
-    if score >= 4:
-        logger.info("  [%d/5] %s — %s", score, prof["name"], uni_name)
+            match_score=score,
+            match_reason=reason,
+            contact=prof.get("contact", ""),
+        )
+        if score >= 4:
+            logger.info("  [%d/5] %s — %s", score, prof["name"], uni_name)
+    except Exception:
+        logger.exception("Failed to process professor %s", url)
 
 
 def _process_phd_page(uni_id: int, uni_name: str, url: str):
     if phd_page_is_done(url):
         return
     touch_phd_page(uni_id, url)
+    try:
+        html = fetch(url)
+        if not html:
+            return
+        text, _ = clean(html, url)
 
-    html = fetch(url)
-    if not html:
-        return
-    text, _ = clean(html, url)
+        result = call(PHD_EXTRACT_SYS, PHD_EXTRACT_USER.format(
+            university_name=uni_name, url=url, text=text
+        ))
+        if not isinstance(result, dict):
+            return
 
-    result = call(PHD_EXTRACT_SYS, PHD_EXTRACT_USER.format(
-        university_name=uni_name, url=url, text=text
-    ))
-    if not result:
-        return
-
-    programs = result.get("programs", [])
-    if programs:
-        save_phd_page(url, programs)
-        logger.info("  PhD programs found at %s: %d", url, len(programs))
+        programs = result.get("programs", [])
+        if programs:
+            save_phd_page(url, programs)
+            logger.info("  PhD programs found at %s: %d", url, len(programs))
+    except Exception:
+        logger.exception("Failed to process PhD page %s", url)
 
 
 # ── Per-university orchestration ──────────────────────────────────────────────
