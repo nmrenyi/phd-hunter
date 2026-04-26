@@ -154,6 +154,8 @@ def _process_university(uni: dict):
 
         # ── Step 2: collect individual professor URLs ────────────────────────
         professor_urls: set[str] = set()
+        pending_deeper: set[str] = set()
+
         for fac_url in faculty_urls:
             html = fetch(fac_url)
             if not html:
@@ -164,6 +166,25 @@ def _process_university(uni: dict):
                 for u in result.get("professor_urls", []):
                     if isinstance(u, str) and same_domain(u, website):
                         professor_urls.add(u)
+                # Collect deeper listing pages only if no direct profiles found yet
+                if not professor_urls:
+                    for u in result.get("deeper_urls", [])[:5]:
+                        if isinstance(u, str) and same_domain(u, website):
+                            pending_deeper.add(u)
+
+        # One additional level: follow deeper listing pages when no profiles found yet
+        if not professor_urls and pending_deeper:
+            logger.info("  No direct profiles found; drilling into %d deeper pages", len(pending_deeper))
+            for deep_url in sorted(pending_deeper):
+                html = fetch(deep_url)
+                if not html:
+                    continue
+                text, _ = clean(html, deep_url)
+                result = call(PROF_LINKS_SYS, PROF_LINKS_USER.format(url=deep_url, text=text))
+                if isinstance(result, dict):
+                    for u in result.get("professor_urls", []):
+                        if isinstance(u, str) and same_domain(u, website):
+                            professor_urls.add(u)
 
         # ── Step 3: process each professor ──────────────────────────────────
         prof_list = sorted(professor_urls)[:_MAX_PROF_URLS_PER_UNI]
@@ -184,8 +205,10 @@ def _process_university(uni: dict):
 
 # ── Public entry point ────────────────────────────────────────────────────────
 
-def crawl_all():
+def crawl_all(limit: int = 0):
     pending = get_pending_universities()
+    if limit:
+        pending = pending[:limit]
     logger.info("Crawling %d universities...", len(pending))
     for i, uni in enumerate(pending, 1):
         logger.info("[%d/%d] %s", i, len(pending), uni["name"])
