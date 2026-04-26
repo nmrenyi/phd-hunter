@@ -31,23 +31,29 @@ Return JSON."""
 # ── Find professor links from a directory page ────────────────────────────────
 
 PROF_LINKS_SYS = """\
-You are extracting individual professor profile URLs from a faculty directory page.
+You are navigating an academic website to find individual professor profile pages.
+
+Given a page, return two lists:
+- professor_urls: URLs of individual faculty member profile pages (one person per page, \
+  e.g. /people/john-doe, /faculty/jane-smith). Include up to 60.
+- deeper_urls: URLs of pages that likely LIST multiple professors — e.g. anchor text \
+  contains "people", "faculty", "staff", "members", "researchers", "group", "team", \
+  "directory". Only populate this if professor_urls is empty. Include up to 5.
+
+Only include URLs that are literally present in the provided content. \
+Do NOT invent or guess URLs.
 
 Return ONLY valid JSON:
-{"professor_urls": ["url1", "url2", ...]}
-
-Include only URLs that lead to individual faculty member profile pages. \
-Exclude department overviews, course pages, and admin staff. \
-Return at most 60 URLs."""
+{"professor_urls": ["url1", "url2"], "deeper_urls": ["url3"]}"""
 
 PROF_LINKS_USER = """\
-Directory URL: {url}
+Page URL: {url}
 
 --- PAGE CONTENT ---
 {text}
 --- END ---
 
-Return JSON with professor_urls."""
+Return JSON."""
 
 # ── Extract professor profile ─────────────────────────────────────────────────
 
