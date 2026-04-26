@@ -21,6 +21,12 @@ _FALLBACK: list[tuple[str, str]] = [
     ("ETH Zurich", "https://ethz.ch"),
     ("Imperial College London", "https://www.imperial.ac.uk"),
     ("UCL", "https://www.ucl.ac.uk"),
+    ("University College London", "https://www.ucl.ac.uk"),
+    ("Paris-Saclay University", "https://www.universite-paris-saclay.fr/en"),
+    ("University of California, San Francisco", "https://www.ucsf.edu"),
+    ("Washington University in St. Louis", "https://wustl.edu"),
+    ("Rockefeller University", "https://www.rockefeller.edu"),
+    ("University of Michigan-Ann Arbor", "https://umich.edu"),
     ("University of California, Berkeley", "https://www.berkeley.edu"),
     ("University of Chicago", "https://www.uchicago.edu"),
     ("Princeton University", "https://www.princeton.edu"),
@@ -120,8 +126,24 @@ def _normalize(name: str) -> str:
     return re.sub(r"\s+", " ", name).strip()
 
 
+# Pre-built lookup from the fallback list so we don't need DuckDuckGo for known names
+_FALLBACK_LOOKUP: dict[str, str] = {
+    _normalize(n).lower(): u for n, u in _FALLBACK
+}
+
+
+def _lookup_fallback(name: str) -> str | None:
+    """Return a website from _FALLBACK by exact or parenthetical-stripped name."""
+    key = _normalize(name).lower()
+    if key in _FALLBACK_LOOKUP:
+        return _FALLBACK_LOOKUP[key]
+    # Strip parenthetical suffix, e.g. "Massachusetts Institute of Technology (MIT)"
+    stripped = re.sub(r"\s*\(.*?\)", "", key).strip()
+    return _FALLBACK_LOOKUP.get(stripped)
+
+
 def _search_website(name: str) -> str | None:
-    """DuckDuckGo fallback to find a university's homepage."""
+    """DuckDuckGo last-resort lookup when _FALLBACK has no match."""
     query = f"{name} official university website"
     html = fetch_requests(f"https://html.duckduckgo.com/html/?q={quote_plus(query)}")
     if not html:
@@ -282,11 +304,15 @@ def fetch_all_rankings() -> int:
     _add(times, "Times", "rank_times")
     _add(arwu, "ARWU", "rank_arwu")
 
-    # Fill in missing websites
+    # Fill in missing websites: fallback list first, DuckDuckGo only as last resort
     for uni in merged.values():
         if not uni["website"]:
-            logger.info("Looking up website for %s", uni["name"])
-            uni["website"] = _search_website(uni["name"])
+            uni["website"] = _lookup_fallback(uni["name"])
+            if uni["website"]:
+                logger.info("Website from fallback for %s: %s", uni["name"], uni["website"])
+            else:
+                logger.info("DuckDuckGo lookup for %s", uni["name"])
+                uni["website"] = _search_website(uni["name"])
 
     for uni in merged.values():
         upsert_university(**uni)
