@@ -20,6 +20,7 @@ def get_llm() -> ChatOllama:
             temperature=LLM_TEMPERATURE,
             num_ctx=LLM_NUM_CTX,
             num_predict=LLM_NUM_PREDICT,
+            reasoning=False,  # disable Qwen3 extended thinking
         )
     return _llm
 
@@ -49,8 +50,7 @@ def call(system: str, user: str) -> dict | list | None:
     """Call the LLM and return parsed JSON, or None on failure."""
     messages = [
         SystemMessage(content=system),
-        # /no_think disables Qwen3 extended reasoning
-        HumanMessage(content=user + "\n\n/no_think"),
+        HumanMessage(content=user),
     ]
     try:
         resp = get_llm().invoke(messages)
