@@ -3,7 +3,7 @@ from typing import TypedDict
 from langgraph.graph import END, StateGraph
 
 from .crawl import crawl_all
-from .db import get_all_universities, get_pending_universities, init_db
+from .db import init_db
 from .rankings import fetch_all_rankings
 from .report import generate
 

@@ -1,6 +1,7 @@
 """Scrape QS, Times Higher Education, and ARWU top-100 rankings."""
 import logging
 import re
+from urllib.parse import quote_plus
 
 from bs4 import BeautifulSoup
 
@@ -66,7 +67,6 @@ _FALLBACK: list[tuple[str, str]] = [
     ("Hong Kong University of Science and Technology", "https://hkust.edu.hk"),
     ("Chinese University of Hong Kong", "https://www.cuhk.edu.hk"),
     ("EPFL", "https://www.epfl.ch/en"),
-    ("ETH Zurich", "https://ethz.ch/en"),
     ("University of Zurich", "https://www.uzh.ch/en"),
     ("University of Geneva", "https://www.unige.ch/en"),
     ("Technical University of Munich", "https://www.tum.de/en"),
@@ -123,7 +123,7 @@ def _normalize(name: str) -> str:
 def _search_website(name: str) -> str | None:
     """DuckDuckGo fallback to find a university's homepage."""
     query = f"{name} official university website"
-    html = fetch_requests(f"https://html.duckduckgo.com/html/?q={query.replace(' ', '+')}")
+    html = fetch_requests(f"https://html.duckduckgo.com/html/?q={quote_plus(query)}")
     if not html:
         return None
     soup = BeautifulSoup(html, "lxml")
@@ -166,8 +166,11 @@ def _scrape_qs() -> list[dict]:
         name = _normalize(name_el.get_text(strip=True))
         if len(name) < 4:
             continue
+        # Exclude links back to the ranking site itself
         link = row.select_one("a[href^='http']")
-        website = link["href"] if link else None
+        website = None
+        if link and "topuniversities.com" not in link["href"]:
+            website = link["href"]
         results.append({"name": name, "website": website})
 
     logger.info("QS: %d entries", len(results))
@@ -191,16 +194,16 @@ def _scrape_times() -> list[dict]:
         or soup.select("table tbody tr")
     )
     for row in rows[:100]:
-        name = (
-            row.get("data-name")
-            or (row.select_one(".ranking-institution-title") or {}).get_text(strip=True)  # type: ignore[operator]
-            or ""
-        )
+        el = row.select_one(".ranking-institution-title")
+        name = row.get("data-name") or (el.get_text(strip=True) if el else "") or ""
         name = _normalize(name)
         if len(name) < 4:
             continue
+        # Exclude links back to the ranking site itself
         link = row.select_one("a[href^='http']")
-        website = link["href"] if link else None
+        website = None
+        if link and "timeshighereducation.com" not in link["href"]:
+            website = link["href"]
         results.append({"name": name, "website": website})
 
     logger.info("THE: %d entries", len(results))

@@ -4,6 +4,8 @@ import logging
 
 from .db import (
     get_pending_universities,
+    phd_page_is_done,
+    professor_is_done,
     save_phd_page,
     save_professor,
     set_university_crawling,
@@ -34,6 +36,8 @@ _MAX_PROF_URLS_PER_UNI = 80
 # ── Individual page processors ────────────────────────────────────────────────
 
 def _process_professor(uni_id: int, uni_name: str, url: str):
+    if professor_is_done(url):
+        return
     touch_professor(uni_id, url)
 
     html = fetch(url)
@@ -77,6 +81,8 @@ def _process_professor(uni_id: int, uni_name: str, url: str):
 
 
 def _process_phd_page(uni_id: int, uni_name: str, url: str):
+    if phd_page_is_done(url):
+        return
     touch_phd_page(uni_id, url)
 
     html = fetch(url)
@@ -113,7 +119,7 @@ def _process_university(uni: dict):
 
     try:
         # ── Step 1: discover faculty & PhD entry points from homepage ────────
-        html = fetch(website) or fetch(website, force_playwright=True)
+        html = fetch(website)  # already falls back to playwright internally
         if not html:
             logger.warning("Cannot fetch homepage of %s", uni_name)
             set_university_status(uni_id, "error")
@@ -155,7 +161,7 @@ def _process_university(uni: dict):
                         professor_urls.add(u)
 
         # ── Step 3: process each professor ──────────────────────────────────
-        prof_list = list(professor_urls)[:_MAX_PROF_URLS_PER_UNI]
+        prof_list = sorted(professor_urls)[:_MAX_PROF_URLS_PER_UNI]
         logger.info("  %d professor pages to process", len(prof_list))
         for url in prof_list:
             _process_professor(uni_id, uni_name, url)

@@ -75,9 +75,10 @@ def get_all_universities() -> list:
 
 
 def get_pending_universities() -> list:
+    # Include 'crawling': a process that crashed left universities in that state
     with _conn() as c:
         return c.execute(
-            "SELECT * FROM universities WHERE status IN ('pending', 'error') ORDER BY id"
+            "SELECT * FROM universities WHERE status IN ('pending', 'error', 'crawling') ORDER BY id"
         ).fetchall()
 
 
@@ -115,6 +116,22 @@ def save_professor(page_url: str, name: str, title: str, department: str,
         WHERE page_url=?
         """, (name, title, department, research_summary,
               match_score, match_reason, contact, page_url))
+
+
+def professor_is_done(page_url: str) -> bool:
+    with _conn() as c:
+        row = c.execute(
+            "SELECT 1 FROM professors WHERE page_url=? AND status='done'", (page_url,)
+        ).fetchone()
+        return row is not None
+
+
+def phd_page_is_done(page_url: str) -> bool:
+    with _conn() as c:
+        row = c.execute(
+            "SELECT 1 FROM phd_programs WHERE page_url=? AND status='done'", (page_url,)
+        ).fetchone()
+        return row is not None
 
 
 def get_matched_professors(threshold: int) -> list:

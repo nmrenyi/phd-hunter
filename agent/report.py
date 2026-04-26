@@ -50,7 +50,7 @@ def generate() -> str:
 
     for uni_name in uni_names:
         uni = all_unis.get(uni_name, {})
-        website = uni.get("uni_website") or uni.get("website", "")
+        website = uni.get("website", "")
         header = f"[{uni_name}]({website})" if website else uni_name
         lines.append(f"## {header}\n")
         lines.append(f"*{_rank_str(uni)}*\n")
