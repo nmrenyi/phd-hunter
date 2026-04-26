@@ -85,6 +85,9 @@ def clean(html: str, base_url: str = "") -> tuple[str, list[str]]:
             full = urljoin(base_url, href) if base_url else href
             if full.startswith("http"):
                 links.append(full)
+                # Embed URL inline so the LLM can see and use the actual href
+                anchor = a.get_text(strip=True)
+                a.replace_with(f"{anchor} ({full})" if anchor else full)
 
     text = soup.get_text(separator="\n", strip=True)
     text = re.sub(r"\n{3,}", "\n\n", text)
