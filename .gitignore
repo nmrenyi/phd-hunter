@@ -60,3 +60,6 @@ htmlcov/
 .DS_Store
 .AppleDouble
 .LSOverride
+
+# Runtime data (DB checkpoint, generated report)
+data/
