@@ -73,7 +73,9 @@ def clean(html: str, base_url: str = "") -> tuple[str, list[str]]:
     """Return (cleaned_text_truncated, deduplicated_absolute_links)."""
     soup = BeautifulSoup(html, "lxml")
 
-    for tag in soup(["script", "style", "noscript", "iframe", "svg", "img", "head", "nav", "footer"]):
+    # Keep nav/footer — they contain the faculty-directory and PhD-admissions links
+    # that the entry-point LLM prompt needs to see
+    for tag in soup(["script", "style", "noscript", "iframe", "svg", "img", "head"]):
         tag.decompose()
 
     links = []

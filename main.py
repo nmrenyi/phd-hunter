@@ -27,7 +27,7 @@ def main():
                         help="Regenerate report.md from existing DB data")
     args = parser.parse_args()
 
-    from agent.db import init_db, get_all_universities
+    from agent.db import init_db
     init_db()
 
     if args.report_only:

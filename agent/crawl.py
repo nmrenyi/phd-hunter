@@ -140,7 +140,7 @@ def _process_university(uni: dict):
 
         faculty_urls: list[str] = []
         phd_urls: list[str] = []
-        if entry:
+        if isinstance(entry, dict):
             faculty_urls = [
                 u for u in entry.get("faculty_urls", [])
                 if isinstance(u, str) and same_domain(u, website)
@@ -160,7 +160,7 @@ def _process_university(uni: dict):
                 continue
             text, _ = clean(html, fac_url)
             result = call(PROF_LINKS_SYS, PROF_LINKS_USER.format(url=fac_url, text=text))
-            if result:
+            if isinstance(result, dict):
                 for u in result.get("professor_urls", []):
                     if isinstance(u, str) and same_domain(u, website):
                         professor_urls.add(u)

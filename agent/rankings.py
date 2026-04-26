@@ -235,7 +235,9 @@ def _scrape_arwu() -> list[dict]:
         if len(name) < 4:
             continue
         link = row.select_one("a[href^='http']")
-        website = link["href"] if link else None
+        website = None
+        if link and "shanghairanking.com" not in link["href"]:
+            website = link["href"]
         results.append({"name": name, "website": website})
 
     logger.info("ARWU: %d entries", len(results))
