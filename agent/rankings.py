@@ -5,7 +5,7 @@ from urllib.parse import quote_plus
 
 from bs4 import BeautifulSoup
 
-from .db import upsert_university
+from .db import upsert_university, _conn
 from .fetch import fetch, fetch_playwright, fetch_requests
 
 logger = logging.getLogger(__name__)
@@ -142,150 +142,128 @@ def _lookup_fallback(name: str) -> str | None:
     return _FALLBACK_LOOKUP.get(stripped)
 
 
-def _search_website(name: str) -> str | None:
-    """DuckDuckGo last-resort lookup when _FALLBACK has no match."""
-    query = f"{name} official university website"
-    html = fetch_requests(f"https://html.duckduckgo.com/html/?q={quote_plus(query)}")
+def _website_from_wiki(wiki_path: str) -> str | None:
+    """Extract official website from a Wikipedia university article infobox."""
+    html = fetch_requests(f"https://en.wikipedia.org{wiki_path}")
     if not html:
         return None
     soup = BeautifulSoup(html, "lxml")
-    el = soup.select_one(".result__url")
-    if el:
-        raw = el.get_text(strip=True)
-        if not raw.startswith("http"):
-            raw = "https://" + raw
-        return raw
+    for th in soup.select("table.infobox th"):
+        if "website" in th.get_text(strip=True).lower():
+            td = th.find_next_sibling("td")
+            if td:
+                a = td.find("a", href=True)
+                if a and a["href"].startswith("http"):
+                    return a["href"]
     return None
+
+
+def _resolve_website(name: str, wiki_path: str = "") -> str | None:
+    """Resolve a university website: fallback list → Wikipedia infobox."""
+    website = _lookup_fallback(name)
+    if website:
+        return website
+    if wiki_path:
+        website = _website_from_wiki(wiki_path)
+    return website
 
 
 # ── Per-source scrapers ───────────────────────────────────────────────────────
 
-def _scrape_qs() -> list[dict]:
-    logger.info("Fetching QS rankings...")
-    url = "https://www.topuniversities.com/world-university-rankings/2025"
-    html = fetch_playwright(url, wait_ms=3500)
+def _scrape_wiki_ranking_table(url: str, source_label: str,
+                               caption_hint: str = "") -> list[dict]:
+    """
+    Parse a Wikipedia university ranking table (wikitable).
+    Columns: Institution | Year1 | Year2 | ...
+    The first <td> in each row contains a country flag link followed by the
+    university link — we skip any <a> that has an <img> child (flag icons).
+    Returns list of {name, website, wiki_path}.
+    Wikipedia tables only cover historically top-10 entries (~10–26 rows).
+    """
+    html = fetch_requests(url)
     if not html:
-        logger.warning("QS: page fetch failed")
+        logger.warning("%s Wikipedia: fetch failed", source_label)
         return []
 
     soup = BeautifulSoup(html, "lxml")
-    results = []
 
-    # QS renders rows as <tr> elements with a data attribute or named link
-    rows = (
-        soup.select("tr.uni-link")
-        or soup.select("div.uni-item")
-        or soup.select("table tbody tr")
-    )
-    for row in rows[:100]:
-        name_el = (
-            row.select_one(".uni-name")
-            or row.select_one("a[href*='/universities/']")
-            or row.select_one("td:nth-child(2)")
-        )
-        if not name_el:
+    # Pick the right table by caption keyword when multiple wikitables exist
+    table = None
+    for t in soup.find_all("table", class_="wikitable"):
+        caption_text = (t.find("caption") or t).get_text()
+        if not caption_hint or caption_hint in caption_text:
+            table = t
+            break
+
+    if not table:
+        logger.warning("%s Wikipedia: ranking table not found", source_label)
+        return []
+
+    results = []
+    for row in table.find_all("tr"):
+        cells = row.find_all("td")
+        if not cells:
             continue
-        name = _normalize(name_el.get_text(strip=True))
+        # Skip flag/country links (have <img> children); take first plain text link
+        name_link = None
+        for a in cells[0].find_all("a", href=re.compile(r"^/wiki/[^:]+$")):
+            if not a.find("img"):
+                name_link = a
+                break
+        if not name_link:
+            continue
+        name = _normalize(name_link.get_text(strip=True))
         if len(name) < 4:
             continue
-        # Exclude links back to the ranking site itself
-        link = row.select_one("a[href^='http']")
-        website = None
-        if link and "topuniversities.com" not in link["href"]:
-            website = link["href"]
-        results.append({"name": name, "website": website})
+        wiki_path = name_link["href"]
+        website = _resolve_website(name, wiki_path)
+        results.append({"name": name, "website": website, "wiki_path": wiki_path})
 
-    logger.info("QS: %d entries", len(results))
+    logger.info("%s Wikipedia: %d entries", source_label, len(results))
     return results
+
+
+def _scrape_qs() -> list[dict]:
+    logger.info("Fetching QS rankings from Wikipedia...")
+    return _scrape_wiki_ranking_table(
+        "https://en.wikipedia.org/wiki/QS_World_University_Rankings", "QS",
+        caption_hint="Global Top"
+    )
 
 
 def _scrape_times() -> list[dict]:
-    logger.info("Fetching Times Higher Education rankings...")
-    url = "https://www.timeshighereducation.com/world-university-rankings/2024/world-ranking"
-    html = fetch_playwright(url, wait_ms=4000)
-    if not html:
-        logger.warning("THE: page fetch failed")
-        return []
-
-    soup = BeautifulSoup(html, "lxml")
-    results = []
-
-    rows = (
-        soup.select("tr.ranking-institution-row")
-        or soup.select("[data-name]")
-        or soup.select("table tbody tr")
+    logger.info("Fetching THE rankings from Wikipedia...")
+    return _scrape_wiki_ranking_table(
+        "https://en.wikipedia.org/wiki/Times_Higher_Education_World_University_Rankings", "THE",
+        caption_hint="World University Rankings"
     )
-    for row in rows[:100]:
-        el = row.select_one(".ranking-institution-title")
-        name = row.get("data-name") or (el.get_text(strip=True) if el else "") or ""
-        name = _normalize(name)
-        if len(name) < 4:
-            continue
-        # Exclude links back to the ranking site itself
-        link = row.select_one("a[href^='http']")
-        website = None
-        if link and "timeshighereducation.com" not in link["href"]:
-            website = link["href"]
-        results.append({"name": name, "website": website})
-
-    logger.info("THE: %d entries", len(results))
-    return results
 
 
 def _scrape_arwu() -> list[dict]:
-    logger.info("Fetching ARWU rankings...")
-    url = "https://www.shanghairanking.com/rankings/arwu/2024"
-    html = fetch(url) or fetch_playwright(url, wait_ms=2500)
-    if not html:
-        logger.warning("ARWU: page fetch failed")
-        return []
-
-    soup = BeautifulSoup(html, "lxml")
-    results = []
-
-    rows = soup.select("tbody tr") or soup.select(".rk-table-item")
-    for row in rows[:100]:
-        name_el = (
-            row.select_one(".univ-name")
-            or row.select_one("a.university-name")
-            or row.select_one("td:nth-child(2) a")
-            or row.select_one("td:nth-child(2)")
-        )
-        if not name_el:
-            continue
-        name = _normalize(name_el.get_text(strip=True))
-        if len(name) < 4:
-            continue
-        link = row.select_one("a[href^='http']")
-        website = None
-        if link and "shanghairanking.com" not in link["href"]:
-            website = link["href"]
-        results.append({"name": name, "website": website})
-
-    logger.info("ARWU: %d entries", len(results))
-    return results
+    # ARWU Wikipedia page has no ranked university table; rely on fallback list
+    logger.info("ARWU: no Wikipedia table — covered by fallback list")
+    return []
 
 
 # ── Merge & persist ───────────────────────────────────────────────────────────
 
 def fetch_all_rankings() -> int:
-    """Scrape all three ranking sources, merge, deduplicate, save to DB."""
+    """Build university list from fallback + Wikipedia scrapers, save to DB."""
+    # Always seed the full fallback list first — guarantees a complete base
+    for name, website in _FALLBACK:
+        upsert_university(name, website=website, sources=["fallback"])
+    logger.info("Seeded %d universities from fallback list", len(_FALLBACK))
+
+    # Run Wikipedia scrapers to add ranking metadata and any additional entries
     qs = _scrape_qs()
     times = _scrape_times()
     arwu = _scrape_arwu()
-
-    # If all scrapers failed, fall back to hardcoded list
-    if not qs and not times and not arwu:
-        logger.warning("All ranking scrapers failed — using hardcoded fallback list")
-        for name, website in _FALLBACK:
-            upsert_university(name, website=website, sources=["fallback"])
-        return len(_FALLBACK)
 
     merged: dict[str, dict] = {}
 
     def _add(entries: list[dict], source: str, rank_key: str):
         for rank, uni in enumerate(entries, 1):
-            key = uni["name"].lower()
+            key = _normalize(uni["name"]).lower()
             if key not in merged:
                 merged[key] = {
                     "name": uni["name"],
@@ -304,18 +282,11 @@ def fetch_all_rankings() -> int:
     _add(times, "Times", "rank_times")
     _add(arwu, "ARWU", "rank_arwu")
 
-    # Fill in missing websites: fallback list first, DuckDuckGo only as last resort
-    for uni in merged.values():
-        if not uni["website"]:
-            uni["website"] = _lookup_fallback(uni["name"])
-            if uni["website"]:
-                logger.info("Website from fallback for %s: %s", uni["name"], uni["website"])
-            else:
-                logger.info("DuckDuckGo lookup for %s", uni["name"])
-                uni["website"] = _search_website(uni["name"])
-
+    # Upsert scraped entries (adds rank metadata; website already resolved per entry)
     for uni in merged.values():
         upsert_university(**uni)
 
-    logger.info("Total unique universities saved: %d", len(merged))
-    return len(merged)
+    with _conn() as c:
+        total = c.execute("SELECT COUNT(*) FROM universities").fetchone()[0]
+    logger.info("Total unique universities in DB: %d", total)
+    return total
