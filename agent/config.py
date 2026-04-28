@@ -1,7 +1,7 @@
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).parent.parent
-CV_PATH = ROOT_DIR / "cv" / "cv-renyi-en-20260413.md"
+CV_PATH = ROOT_DIR / "cv" / "cv.md"
 DATA_DIR = ROOT_DIR / "data"
 DB_PATH = DATA_DIR / "checkpoint.db"
 REPORT_PATH = DATA_DIR / "report.md"
