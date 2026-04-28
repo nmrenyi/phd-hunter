@@ -1,4 +1,4 @@
-# PhD Scout
+# PhD Hunter
 
 An autonomous agent that crawls 100+ top-ranked universities, reads faculty profiles, and scores each professor's research fit against your CV — running entirely on a local LLM, no cloud API costs.
 
